@@ -1200,9 +1200,9 @@ cont_child_destroy_one(void *vin)
 		cont_child_stop(cont);
 
 		/*
-		 * This might be racy, as dtx_resync() might yeild after
+		 * This might be racy, as dtx_resync() might yield after
 		 * ds_cont_child_lookup(), but before @sc_dtx_resyncing set,
-		 * we use @sc_fini_cond to gurantee all users exit properly.
+		 * we use @sc_fini_cond to guarantee all users exit properly.
 		 */
 		ABT_mutex_lock(cont->sc_mutex);
 		if (cont->sc_dtx_resyncing)
