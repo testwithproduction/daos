@@ -56,6 +56,10 @@ struct sched_info {
 	uint32_t		 si_total_req_cnt;
 	/* Request count for each type of inuse request */
 	uint32_t		 si_req_cnt[SCHED_REQ_MAX];
+	/* Estimated time based on ults on argobots and non-system requests Queued.*/
+	uint64_t		 si_estimated_time;
+	/* Number of non system requests */
+	uint64_t		 si_non_sys_req_cnt;
 	int			 si_sleep_cnt;	/* Sleeping request count */
 	int			 si_wait_cnt;	/* Long wait request count */
 	/* Number of kicked requests for each type in current cycle */

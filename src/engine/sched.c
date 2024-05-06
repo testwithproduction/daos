@@ -597,8 +597,10 @@ sched_info_init(struct dss_xstream *dx)
 	info->si_total_req_cnt = 0;
 	info->si_sleep_cnt = 0;
 	info->si_wait_cnt = 0;
+	info->si_estimated_time = 0;
 	info->si_stop = 0;
 	sched_metrics_init(dx);
+	info->si_non_sys_req_cnt = 0;
 
 	rc = d_hash_table_create(D_HASH_FT_NOLOCK, 4,
 				 NULL, &sched_pool_hash_ops,
@@ -734,6 +736,15 @@ req_kickoff_internal(struct dss_xstream *dx, struct sched_req_attr *attr,
 					DSS_ULT_FL_PERIODIC : 0);
 }
 
+static bool
+is_system_req(int req_type)
+{
+	if (req_type == SCHED_REQ_UPDATE || req_type == SCHED_REQ_FETCH)
+		return false;
+
+	return true;
+}
+
 static int
 req_kickoff(struct dss_xstream *dx, struct sched_request *req)
 {
@@ -768,6 +779,13 @@ req_kickoff(struct dss_xstream *dx, struct sched_request *req)
 		d_binheap_remove(&info->si_heap, &req->sr_node);
 	else
 		d_list_del_init(&req->sr_link);
+
+	if (!is_system_req(req->sr_attr.sra_type)) {
+		D_ASSERT(info->si_estimated_time >= req_latencys[req->sr_attr.sra_type]);
+		info->si_estimated_time -= req_latencys[req->sr_attr.sra_type];
+		D_ASSERT(info->si_non_sys_req_cnt > 0);
+		info->si_non_sys_req_cnt--;
+	}
 
 	req_put(dx, req);
 
@@ -1111,15 +1129,6 @@ throttle_sys(struct stats_window *sw, uint32_t *kick, struct pressure_ratio *pr)
 		apportion_wts(avail_wts, kick, SCHED_REQ_SCRUB);
 }
 
-static bool
-is_system_req(int req_type)
-{
-	if (req_type == SCHED_REQ_UPDATE || req_type == SCHED_REQ_FETCH)
-		return false;
-
-	return true;
-}
-
 static int
 process_pool_cb(d_list_t *rlink, void *arg)
 {
@@ -1196,6 +1205,7 @@ policy_fifo_enqueue(struct dss_xstream *dx, struct sched_request *req,
 	 */
 	if (attr->sra_flags & SCHED_REQ_FL_RESENT) {
 		D_ASSERT(attr->sra_enqueue_id > 0);
+		D_ASSERT(0);
 		return d_binheap_insert(&info->si_heap, &req->sr_node);
 	}
 
@@ -1221,6 +1231,7 @@ policy_fifo_process(struct dss_xstream *dx)
 	 */
 	d_list_for_each_entry_safe(req, tmp, &info->si_fifo_list, sr_link) {
 		while (!d_binheap_is_empty(&info->si_heap)) {
+			D_ASSERT(0);
 			node = d_binheap_root(&info->si_heap);
 			req1 = container_of(node, struct sched_request, sr_node);
 			if (req1->sr_attr.sra_enqueue_id < req->sr_attr.sra_enqueue_id) {
@@ -1238,6 +1249,7 @@ policy_fifo_process(struct dss_xstream *dx)
 
 	/* Process retried RPCs if any */
 	while (!d_binheap_is_empty(&info->si_heap)) {
+		D_ASSERT(0);
 		node = d_binheap_root(&info->si_heap);
 		req1 = container_of(node, struct sched_request, sr_node);
 		rc = process_req(dx, req1);
@@ -1251,6 +1263,7 @@ policy_fifo_process(struct dss_xstream *dx)
 	 * Insert skipped retried RPCs back to heap.
 	 */
 	d_list_for_each_entry_safe(req, tmp, &tmp_list, sr_link) {
+		D_ASSERT(0);
 		d_binheap_insert(&info->si_heap, &req->sr_node);
 		d_list_del_init(&req->sr_link);
 	}
@@ -1337,21 +1350,29 @@ req_enqueue(struct dss_xstream *dx, struct sched_request *req)
 	info->si_total_req_cnt++;
 	info->si_req_cnt[attr->sra_type]++;
 
+	if (!is_system_req(attr->sra_type)) {
+		info->si_estimated_time += req_latencys[attr->sra_type];
+		info->si_non_sys_req_cnt++;
+	}
+
 	return rc;
 }
 
-#define MAX_SCHED_REQ_NUM	(1 << 20)
-#define RPC_ROUND_TRIP_TIME	(100)	/* in msecs */
+#define MAX_SCHED_REQ_NUM		(1 << 20)
+#define RPC_ROUND_TRIP_TIME		(100)	/* in msecs */
+#define MIN_CHECKED_ESTIMATED_TIME	(100000) /*in usecs */
 
 static bool
 req_need_reject(struct sched_req_attr *attr, struct sched_info *info)
 {
 	uint64_t	estimated_time = 0;
-	uint64_t	req_num = 0;
-	int		i;
 
 	/* Old clients RPC won't be rejected */
 	if (attr->sra_flags & SCHED_REQ_FL_NO_REJECT)
+		return false;
+
+	/* Avoid calculations in normal case */
+	if (info->si_estimated_time <= MIN_CHECKED_ESTIMATED_TIME)
 		return false;
 
 	/*
@@ -1359,24 +1380,18 @@ req_need_reject(struct sched_req_attr *attr, struct sched_info *info)
 	 * requests queued. It is not easy to estimate how many system
 	 * ults will be executed, reserve 50% of RPC estimated time.
 	 */
-	for (i = SCHED_REQ_UPDATE; i < SCHED_REQ_MAX; i++) {
-		if (!is_system_req(i)) {
-			estimated_time += (uint64_t)info->si_req_cnt[i] * req_latencys[i];
-			req_num += info->si_req_cnt[i];
-		}
-	}
+	estimated_time = info->si_estimated_time;
 	/* convert to msecs */
 	estimated_time /= 1000;
 	/* system ULT time */
-	estimated_time += (estimated_time / 2);
-	/* max cycle time */
+	estimated_time += (estimated_time >> 1);
 	estimated_time += MAX_CYCLE_TIME;
 	/* RPC round-trip time */
 	estimated_time += RPC_ROUND_TRIP_TIME;
 	if (estimated_time > attr->sra_timeout)
 		return true;
 
-	if (req_num > MAX_SCHED_REQ_NUM)
+	if (info->si_non_sys_req_cnt > MAX_SCHED_REQ_NUM)
 		return true;
 
 	return false;
