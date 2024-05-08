@@ -1,5 +1,5 @@
 /**
- * (C) Copyright 2016-2023 Intel Corporation.
+ * (C) Copyright 2016-2024 Intel Corporation.
  *
  * SPDX-License-Identifier: BSD-2-Clause-Patent
  */
@@ -755,32 +755,32 @@ vos_pmemobj_create(const char *path, uuid_t pool_id, const char *layout,
 	if (!bio_nvme_configured(SMD_DEV_TYPE_MAX) || xs_ctxt == NULL)
 		goto umem_create;
 
-	/* Is meta_sz is set then use it, otherwise derive from VOS file size or scm_sz */
-	if (!meta_sz) {
-		if (!scm_sz) {
-			struct stat lstat;
+	/* If scm_sz isn't set, derive it from VOS file size */
+	if (!scm_sz) {
+		struct stat lstat;
 
-			rc = stat(path, &lstat);
-			if (rc != 0)
-				return daos_errno2der(errno);
-			meta_sz = lstat.st_size;
-		} else {
-			/* Custom scm_sz specified so use it (not regular DAOS pool case) */
-			meta_sz = scm_sz;
-		}
-	} else if ((scm_sz) && (meta_sz != scm_sz)) {
-		// See below comment on DAV allocator support and remove check when completed.
-		D_ERROR("scm_size != meta_size pool create case not supported, scm_sz: " DF_U64
-			" meta_sz: " DF_U64,
+		rc = stat(path, &lstat);
+		if (rc != 0)
+			return daos_errno2der(errno);
+		scm_sz = lstat.st_size;
+	}
+
+	/* Is meta_sz is set then use it, otherwise derive from scm_sz */
+	if (!meta_sz)
+		meta_sz = scm_sz;
+
+	/* XXX Remove this check once DAV allocator support is done */
+	if (meta_sz != scm_sz) {
+		D_ERROR("scm_size("DF_U64")!= meta_size("DF_U64") is not supported\n",
 			scm_sz, meta_sz);
 		return -DER_INVAL;
 	}
 
 	D_DEBUG(DB_MGMT, "Create BIO meta context for xs:%p pool:"DF_UUID" "
-		"meta_sz: %zu, nvme_sz: %zu wal_sz:%zu\n",
-		xs_ctxt, DP_UUID(pool_id), meta_sz, nvme_sz, wal_sz);
+		"scm_sz: %zu meta_sz: %zu, nvme_sz: %zu wal_sz:%zu\n",
+		xs_ctxt, DP_UUID(pool_id), scm_sz, meta_sz, nvme_sz, wal_sz);
 
-	rc = bio_mc_create(xs_ctxt, pool_id, meta_sz, wal_sz, nvme_sz, mc_flags);
+	rc = bio_mc_create(xs_ctxt, pool_id, scm_sz, meta_sz, wal_sz, nvme_sz, mc_flags);
 	if (rc != 0) {
 		D_ERROR("Failed to create BIO meta context for xs:%p pool:"DF_UUID". "DF_RC"\n",
 			xs_ctxt, DP_UUID(pool_id), DP_RC(rc));
