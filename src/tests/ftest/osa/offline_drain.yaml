@@ -3,7 +3,7 @@ server_manager:
 hosts:
   test_servers: 3
   test_clients: 1
-timeout: 2400
+timeout: 3400
 setup:
   start_servers_once: false
 skip_add_log_msg: true
@@ -17,9 +17,10 @@ server_config:
       fabric_iface: ib0
       fabric_iface_port: 31416
       log_file: daos_server0.log
-      log_mask: INFO,MEM=ERR
+      log_mask: DEBUG,MEM=ERR
       env_vars:
-        - DD_MASK=mgmt,md
+        - DD_MASK=all
+        - DD_SUBSYS=all
       storage: auto
     1:
       pinned_numa_node: 1
@@ -27,16 +28,17 @@ server_config:
       fabric_iface: ib1
       fabric_iface_port: 31516
       log_file: daos_server1.log
-      log_mask: INFO,MEM=ERR
+      log_mask: DEBUG,MEM=ERR
       env_vars:
-        - DD_MASK=mgmt,md
+        - DD_MASK=all
+        - DD_SUBSYS=all
       storage: auto
 pool:
   scm_size: 12000000000
   nvme_size: 108000000000
   svcn: 4
   control_method: dmg
-  rebuild_timeout: 240
+  rebuild_timeout: 600
   properties: scrub:timed
 container:
   type: POSIX
@@ -59,6 +61,10 @@ ior:
   clientslots:
     slots: 48
   test_file: /testFile
+  env_vars:
+     - D_LOG_MASK=DEBUG,MEM=ERR
+     - DD_MASK=all
+     - DD_SUBSYS=all
   repetitions: 1
   dfs_destroy: false
   iorflags:
