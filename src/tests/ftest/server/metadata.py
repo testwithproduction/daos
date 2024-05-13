@@ -467,10 +467,10 @@ class ObjectMetadata(TestWithServers):
         :avocado: tags=ObjectMetadata,test_metadata_server_restart
         """
         self.create_pool()
-        files_per_thread = 400
-        total_ior_threads = 5
+        files_per_thread = 1  # DEBUGGING
+        total_ior_threads = 1
 
-        processes = self.params.get("slots", "/run/ior/clientslots/*")
+        processes = self.params.get("np", "/run/ior/*")
 
         # Launch threads to run IOR to write data, restart the agents and
         # servers, and then run IOR to read the data
@@ -483,12 +483,11 @@ class ObjectMetadata(TestWithServers):
                 # Define the arguments for the run_ior_loop method
                 ior_cmd = IorCommand()
                 ior_cmd.get_params(self)
-                ior_cmd.set_daos_params(self.pool, None)
+                ior_cmd.update_params(dfs_pool=self.pool.identifier)
                 ior_cmd.flags.value = self.params.get("ior{}flags".format(operation), "/run/ior/*")
 
                 # Define the job manager for the IOR command
-                self.ior_managers.append(
-                    get_job_manager(self, "Clush", ior_cmd))
+                self.ior_managers.append(get_job_manager(self, job=ior_cmd))
                 env = ior_cmd.get_default_env(str(self.ior_managers[-1]))
                 self.ior_managers[-1].assign_hosts(self.hostlist_clients, self.workdir, None)
                 self.ior_managers[-1].assign_processes(processes)

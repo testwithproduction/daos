@@ -57,12 +57,14 @@ container:
   control_method: API
   silent: true
 ior:
-  clientslots:
-    slots: 1
+  np: 1
   dfs_destroy: false
   iorwriteflags: "-w -W -k -G 1"
   iorreadflags: "-r -R -G 1"
-  dfs_oclass: "SX"
+  transfer_size: 1K
+  block_size: 4K
+  api: DFS
+  dfs_oclass: SX
 metadata:
   mean_percent: 1
   num_addremove_loops: 4
